@@ -25,6 +25,7 @@ class ProductoDB(Base):
     nombre = Column(String)
     precio = Column(Float)
     cantidad = Column(Integer)
+    categoria = Column(String)
 
 
 class VentaDB(Base):
@@ -54,6 +55,7 @@ class ProductoCreate(BaseModel):
     nombre: str
     precio: float
     cantidad: int
+    categoria: str
 
 
 class ProductoResponse(ProductoCreate):
