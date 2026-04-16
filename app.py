@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 
+
 st.markdown("""
     <style>
         header {visibility: hidden;}
@@ -70,44 +71,79 @@ st.markdown("""
 
 st.divider()
 
-col1, col2, col3, col4 = st.columns(4)
+st.markdown("""
+<style>
 
-def card(titulo, contenido, color):
-    st.markdown(f"""
-    <div style="
-        background-color:{color};
-        padding:20px;
-        border-radius:15px;
-        text-align:center;
-        color:white;
-        font-weight:bold;
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
-    ">
-        <div style="font-size:28px; margin-bottom:10px;">
-            {contenido}
-        </div>
-        <div style="font-size:16px;">
-            {titulo}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+/* BOTONES GRANDES */
+div.stButton > button {
+    height: 110px;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 15px;
+    white-space: pre-line;
+    border: 2px solid #ddd;
+}
 
-with col1:
-    if st.button(""):
-        st.session_state.menu = "Ventas"
-    card("Nueva Venta", "➕", "#28a745")
+/* CONTENEDOR PRINCIPAL (NO SIDEBAR) */
+section.main div.block-container div.stButton:nth-of-type(1) > button {
+    background-color: #28a745 !important;
+    color: white !important;
+}
 
-with col2:
-    if st.button(" "):
-        st.session_state.menu = "Productos"
-    card("Usuarios", "3", "#17a2b8")  # 👈 luego lo conectamos a BD
+section.main div.block-container div.stButton:nth-of-type(2) > button {
+    background-color: #17a2b8 !important;
+    color: white !important;
+}
 
-with col3:
-    if st.button("  "):
-        st.info("Pedidos próximamente")
-    card("Pedidos", "5", "#ffc107")
+section.main div.block-container div.stButton:nth-of-type(3) > button {
+    background-color: #ffc107 !important;
+    color: black !important;
+}
 
-with col4:
-    if st.button("   "):
-        st.info("Transferencias próximamente")
-    card("Transferencias", "2", "#dc3545")
+section.main div.block-container div.stButton:nth-of-type(4) > button {
+    background-color: #dc3545 !important;
+    color: white !important;
+}
+
+/* HOVER */
+div.stButton > button:hover {
+    transform: scale(1.05);
+    transition: 0.2s;
+}
+
+/* SIDEBAR NORMAL */
+section[data-testid="stSidebar"] div.stButton > button {
+    height: auto !important;
+    font-size: 14px !important;
+    background-color: #f0f2f6 !important;
+    color: black !important;
+    border: 1px solid #ccc !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+if menu == "Inicio":
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.button("+\nNuevo", use_container_width=True)
+    with col2:
+        st.button("3\nUsuarios", use_container_width=True)
+    with col3:
+        st.button("2\nPedidos", use_container_width=True)
+    with col4:
+        st.button("5\nTransferencias", use_container_width=True)
+
+
+menu = st.session_state.menu
+
+if menu == "Productos":
+    st.subheader("Gestión de Productos")
+
+    try:
+        st.write(productos)
+        response = requests.get(f"{API_URL}/productos/")
+        productos = response.json()
+    except:
+        st.error("No se pudo conectar a la API")
+        productos = []
