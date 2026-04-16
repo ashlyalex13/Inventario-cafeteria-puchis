@@ -48,9 +48,7 @@ class CajaDB(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# ======================
-# ESQUEMAS (PROFE STYLE)
-# ======================
+
 class ProductoCreate(BaseModel):
     codigo: int
     nombre: str
