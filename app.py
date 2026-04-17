@@ -255,7 +255,7 @@ if menu == "Productos":
     else:
         for categoria, items in categorias.items():
 
-            with st.expander(f"{categoria}", expanded=True):
+            with st.expander(f"{categoria}", expanded=False):
 
                 # ENCABEZADO TIPO TABLA
                 st.markdown("""
@@ -273,6 +273,9 @@ if menu == "Productos":
                     <div></div>
                 </div>
                 """, unsafe_allow_html=True)
+
+                if "editando" not in st.session_state:
+                    st.session_state.editando = None
 
                 for p in items:
 
@@ -297,32 +300,65 @@ if menu == "Productos":
                         with st.popover("⚙"):
                             
                             if st.button("Editar", key=f"edit_{p['id']}"):
-                                st.warning("Editar próximamente")
+                                st.session_state.editando = p
+                        
 
                             # BOTÓN ELIMINAR (primer paso)
                             if st.button("Eliminar", key=f"del_{p['id']}"):
                                 st.session_state.confirm_delete = p["id"]
 
 
+                    if st.session_state.editando and st.session_state.editando["id"] == p["id"]:
+
+                                  with st.form(f"form_edit_{p['id']}"):
+
+                                    nombre = st.text_input("Nombre", value=p["nombre"])
+                                    precio = st.number_input("Precio", value=float(p["precio"]))
+                                    cantidad = st.number_input("Cantidad", value=int(p["cantidad"]))
+
+                                    guardar = st.form_submit_button("Guardar cambios")
+
+                                    if guardar:
+                                        try:
+                                            res = requests.put(
+                                                f"{API_URL}/productos/{p['id']}",
+                                                json={
+                                                    "codigo": p["codigo"],
+                                                    "nombre": nombre,
+                                                    "precio": precio,
+                                                    "cantidad": cantidad,
+                                                    "categoria": p["categoria"]
+                                                }
+                                            )
+
+                                            if res.status_code == 200:
+                                                st.success("Producto actualizado")
+                                                st.session_state.editando = None
+                                                st.rerun()
+                                            else:
+                                                st.error(res.text)
+
+                                        except Exception as e:
+                                            st.error(f"Error: {e}")
                     # CONFIRMACIÓN
                     if st.session_state.confirm_delete == p["id"]:
-                        st.warning("¿Seguro que quieres eliminar este producto?")
+                                    st.warning("¿Seguro que quieres eliminar este producto?")
 
-                        col_yes, col_no = st.columns(2)
+                                    col_yes, col_no = st.columns(2)
 
-                        with col_yes:
-                            if st.button("Sí, eliminar", key=f"yes_{p['id']}"):
-                                try:
-                                    res = requests.delete(f"{API_URL}/productos/{p['id']}")
-                                    if res.status_code == 200:
-                                        st.success("Producto eliminado")
-                                        st.session_state.confirm_delete = None
-                                        st.rerun()
-                                    else:
-                                        st.error(f"Error: {res.text}")
-                                except Exception as e:
-                                    st.error(f"Error conectando con la API: {e}")
+                                    with col_yes:
+                                        if st.button("Sí, eliminar", key=f"yes_{p['id']}"):
+                                            try:
+                                                res = requests.delete(f"{API_URL}/productos/{p['id']}")
+                                                if res.status_code == 200:
+                                                    st.success("Producto eliminado")
+                                                    st.session_state.confirm_delete = None
+                                                    st.rerun()
+                                                else:
+                                                    st.error(f"Error: {res.text}")
+                                            except Exception as e:
+                                                st.error(f"Error conectando con la API: {e}")
 
-                        with col_no:
-                            if st.button("Cancelar", key=f"no_{p['id']}"):
-                                st.session_state.confirm_delete = None
+                                    with col_no:
+                                        if st.button("Cancelar", key=f"no_{p['id']}"):
+                                            st.session_state.confirm_delete = None
