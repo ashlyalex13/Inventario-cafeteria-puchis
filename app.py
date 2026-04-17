@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 
 
+
 st.markdown("""
     <style>
         header {visibility: hidden;}
@@ -136,7 +137,13 @@ if menu == "Inicio":
 
 
 if menu == "Productos":
-    st.subheader("Gestión de Productos")
+
+    st.markdown("""
+    <h2 style='margin-bottom:10px;'>
+    Gestión de Inventario
+    </h2>
+    """, unsafe_allow_html=True)
+
 
     # ======================
     # OBTENER PRODUCTOS
@@ -145,6 +152,14 @@ if menu == "Productos":
         response = requests.get(f"{API_URL}/productos/")
         if response.status_code == 200:
             productos = response.json()
+
+            from collections import defaultdict
+
+            categorias = defaultdict(list)
+
+            for p in productos:
+                categorias[p["categoria"]].append(p)
+
         else:
             productos = []
     except Exception as e:
@@ -177,7 +192,6 @@ if menu == "Productos":
             precio = st.number_input("Precio", min_value=0.0)
             cantidad = st.number_input("Cantidad", min_value=0)
 
-            # 🔥 GENERAR CÓDIGO
             rango_min, rango_max = rangos_categoria[categoria]
 
             codigos_usados = [
@@ -222,41 +236,48 @@ if menu == "Productos":
     # ======================
     # LISTA
     # ======================
+    st.subheader("Categoría")
+
+
     if not productos:
         st.info("No hay productos")
     else:
-        for p in productos:
-            col1, col2, col3 = st.columns([4, 2, 2])
+        for categoria, items in categorias.items():
 
-            with col1:
-                st.markdown(f"""
-                    <div style="
-                        padding:10px;
-                        border:1px solid #ddd;
-                        border-radius:10px;
-                        background-color:#fafafa;
-                    ">
-                    <b>{p['nombre']}</b><br>
-                    Código: {p['codigo']}<br>
-                    Precio: ${p['precio']}<br>
-                    Stock: {p['cantidad']}
-                    </div>
-                    """, unsafe_allow_html=True)
+            with st.expander(f"{categoria}", expanded=False):
 
-            with col2:
-                if st.button("Editar", key=f"edit_{p['id']}"):
-                    st.warning("Editar aún no implementado")
+                for p in items:
+                    col1, col2, col3 = st.columns([4, 1, 1])
 
-            with col3:
-                if st.button("Eliminar", key=f"del_{p['id']}"):
-                    try:
-                        res = requests.delete(f"{API_URL}/productos/{p['id']}")
-                        if res.status_code == 200:
-                            st.success("Eliminado")
-                            st.rerun()
-                        else:
-                            st.error("Error al eliminar")
-                    except:
-                        st.error("Error conectando con la API")
+                    with col1:
+                        st.markdown(f"""
+                            <div style="
+                                padding:10px;
+                                border:1px solid #ddd;
+                                border-radius:10px;
+                                background-color:#fafafa;
+                            ">
+                            <b>{p['nombre']}</b><br>
+                            Código: {p['codigo']}<br>
+                            Precio: ${p['precio']}<br>
+                            Stock: {p['cantidad']}
+                            </div>
+                        """, unsafe_allow_html=True)
 
-            st.divider()
+                    with col2:
+                        if st.button("Editar", key=f"edit_{p['id']}"):
+                            st.warning("Editar aún no implementado")
+
+                    with col3:
+                        if st.button("Eliminar", key=f"del_{p['id']}"):
+                            try:
+                                res = requests.delete(f"{API_URL}/productos/{p['id']}")
+                                if res.status_code == 200:
+                                    st.success("Eliminado")
+                                    st.rerun()
+                                else:
+                                    st.error("Error al eliminar")
+                            except:
+                                st.error("Error conectando con la API")
+
+                st.divider()
