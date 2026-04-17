@@ -3,11 +3,13 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-
+st.set_page_config(
+    page_title="Cafetería Puchis ☕", 
+    layout="wide")
 
 st.markdown("""
     <style>
-        header {visibility: hidden;}
+
         .block-container {
             padding-top: 0rem;
         }
@@ -17,12 +19,47 @@ st.markdown("""
 
 API_URL = "http://localhost:8000"
 
-st.set_page_config(page_title="Cafetería Puchis ☕", layout="wide")
+def get_total_usuarios():
+    try:
+        res = requests.get(f"{API_URL}/usuarios/count")
+        if res.status_code == 200:
+            return res.json()["total"]
+    except:
+        return 0
 
 
-# ======================
-# SIDEBAR 
-# ======================
+if "usuario" not in st.session_state:
+    st.session_state.usuario = None
+
+if st.session_state.usuario is None:
+
+    st.markdown("# Iniciar sesión")
+
+    with st.form("login_form"):
+
+        username = st.text_input("Usuario")
+        password = st.text_input("Contraseña", type="password")
+
+        submit = st.form_submit_button("Entrar")
+
+        if submit:
+            try:
+                res = requests.post(
+                    f"{API_URL}/login/",
+                    json={"username": username, "password": password},
+                    timeout=5
+                )
+
+                if res.status_code == 200:
+                    st.session_state.usuario = res.json()
+                    st.rerun()
+                else:
+                    st.error("Credenciales incorrectas")
+
+            except Exception as e:
+                st.error(f"Error conectando con la API: {e}")
+
+    st.stop()
 
 st.sidebar.title("Cafetería Puchis")
 
@@ -38,12 +75,6 @@ if st.sidebar.button("📦 Productos", use_container_width=True):
 if st.sidebar.button("💰 Ventas", use_container_width=True):
     st.session_state.menu = "Ventas"
 
-if st.sidebar.button("💸 Gastos", use_container_width=True):
-    st.session_state.menu = "Gastos"
-
-if st.sidebar.button("📉 Pérdidas", use_container_width=True):
-    st.session_state.menu = "Pérdidas"
-
 if st.sidebar.button("🧾 Cierre de caja", use_container_width=True):
     st.session_state.menu = "Cierre de caja"
 
@@ -53,19 +84,21 @@ menu = st.session_state.menu
 col1, col2 = st.columns([1, 6])
 
 with col1:
-    st.markdown(f"{datetime.now().strftime('%H:%M:%S')}")
+    st.markdown(
+        f"<div style='margin-top:40px'>{datetime.now().strftime('%H:%M:%S')}</div>",
+        unsafe_allow_html=True
+    )
 
 with col2:
+    user = st.session_state.usuario
     st.markdown(
-        "<div style='text-align: right;'>"
-        "<button style='padding:8px 15px; border-radius:8px; border:none; background-color:#eee;'>👤 Admin</button>"
-        "</div>",
+        f"<div style='margin-top:40px'>👤 {user['username']} ({user['rol']})</div>",
         unsafe_allow_html=True
     )
 
 if menu == "Inicio":
-    st.markdown("""
-    <h2 style='margin-bottom:10px;'>
+    st.markdown("""          
+    <h2 style='margin-bottom:5px;'>
     ☕ Cafetería Puchis - Sistema de Inventario
     </h2>
     """, unsafe_allow_html=True)
@@ -140,16 +173,24 @@ section[data-testid="stSidebar"] div.stButton > button {
 """, unsafe_allow_html=True)
 
 if menu == "Inicio":
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.button("+\nNuevo", use_container_width=True)
-    with col2:
-        st.button("3\nUsuarios", use_container_width=True)
-    with col3:
-        st.button("2\nPedidos", use_container_width=True)
-    with col4:
-        st.button("5\nTransferencias", use_container_width=True)
+    col1, col2 = st.columns(2)
 
+    total_users = get_total_usuarios()
+    es_admin = st.session_state.usuario["rol"] == "admin"
+
+    with col1:
+        if st.button(f"{total_users}\nUsuarios", use_container_width=True):
+
+            if es_admin:
+                st.session_state.menu = "Usuarios"
+                st.rerun()
+            else:
+                st.warning("Solo el administrador puede acceder")
+
+    with col2:
+        if st.button("5\nTransferencias", use_container_width=True):
+            st.session_state.menu = "Transferencias"
+            st.rerun()
 
 @st.cache_data
 def get_productos():
@@ -611,3 +652,59 @@ if menu == "Ventas":
                 """, unsafe_allow_html=True)
 
                 st.markdown("</div>", unsafe_allow_html=True)
+
+if menu == "Cierre de caja":
+
+    st.markdown("""
+    <h2 style='margin-bottom:10px;'>
+    Cuadre de Caja
+    </h2>
+    """, unsafe_allow_html=True)
+
+    # CONSULTAR ESTADO DE CAJA
+    try:
+        res = requests.get(f"{API_URL}/caja/")
+        data = res.json()
+
+        if data["turno"]:
+            st.info(f"Turno actual: {data['turno']}")
+
+            st.markdown(f"""
+            <div style="
+                background-color:#f1f3f5;
+                padding:20px;
+                border-radius:10px;
+                text-align:center;
+                font-size:18px;
+                font-weight:bold;
+            ">
+                Total acumulado: ${data['total']}
+            </div>
+            """, unsafe_allow_html=True)
+
+        else:
+            st.warning("Caja cerrada")
+
+    except:
+        st.error("Error conectando con la API")
+
+    st.divider()
+
+    # BOTÓN CUADRE
+    if st.button("Cuadre de caja"):
+
+        try:
+            res = requests.post(f"{API_URL}/cuadre-caja/")
+
+            if res.status_code == 200:
+                st.success(f"Cuadre realizado. Total: ${res.json()['total']}")
+                st.rerun()
+            else:
+                st.error(res.text)
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+if menu == "Usuarios":
+    st.title("Usuarios")
+    st.write("Aquí irá la gestión de usuarios")

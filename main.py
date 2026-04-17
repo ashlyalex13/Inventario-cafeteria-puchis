@@ -4,7 +4,6 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime
 from typing import List, Literal
 from pydantic import BaseModel
-from typing import List
 
 # ======================
 # BASE DE DATOS
@@ -14,6 +13,10 @@ DATABASE_URL = "sqlite:///./inventario.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
+
+# CONTROL DE CAJA (memoria)
+caja_abierta = False
+turno_actual = None
 
 # ======================
 # MODELOS DB
@@ -34,8 +37,9 @@ class VentaDB(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     total = Column(Float)
-    fecha = Column(String)
+    fecha = Column(String)  # YYYY-MM-DD
     turno = Column(String)
+
 
 class VentaItemDB(Base):
     __tablename__ = "venta_items"
@@ -51,13 +55,45 @@ class CajaDB(Base):
     __tablename__ = "caja"
 
     id = Column(Integer, primary_key=True, index=True)
-    fecha = Column(String, unique=True)
+    fecha = Column(String, unique=True)  # ejemplo: 2026-04-17-mañana
     total = Column(Float)
 
 
+class UsuarioDB(Base):
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True)
+    password = Column(String)
+    rol = Column(String)  # admin / empleado
+
+
+# Crear tablas
 Base.metadata.create_all(bind=engine)
 
+# ======================
+# CREAR ADMIN AUTOMÁTICO
+# ======================
+def crear_admin():
+    db = SessionLocal()
 
+    existe = db.query(UsuarioDB).filter(UsuarioDB.username == "admin").first()
+
+    if not existe:
+        admin = UsuarioDB(
+            username="admin",
+            password="1234",
+            rol="admin"
+        )
+        db.add(admin)
+        db.commit()
+
+    db.close()
+
+
+# ======================
+# SCHEMAS
+# ======================
 class ProductoCreate(BaseModel):
     codigo: int
     nombre: str
@@ -65,10 +101,12 @@ class ProductoCreate(BaseModel):
     cantidad: int
     categoria: str
 
+
 class ProductoUpdate(BaseModel):
     nombre: str
     precio: float
     cantidad: int
+
 
 class ProductoResponse(ProductoCreate):
     id: int
@@ -76,19 +114,35 @@ class ProductoResponse(ProductoCreate):
     class Config:
         orm_mode = True
 
+
 class VentaItem(BaseModel):
     codigo: int
     cantidad: int
 
+
 class VentaMultiple(BaseModel):
     items: List[VentaItem]
-    turno: Literal["mañana", "tarde"]
+
+
+class LoginData(BaseModel):
+    username: str
+    password: str
+
+
+class UsuarioCreate(BaseModel):
+    username: str
+    password: str
+    rol: str
 
 
 # ======================
 # APP
 # ======================
-app = FastAPI(title="Cafetería Puchis ☕")
+app = FastAPI(title="Cafetería Puchis")
+
+@app.on_event("startup")
+def startup_event():
+    crear_admin()
 
 # ======================
 # DB SESSION
@@ -100,18 +154,38 @@ def get_db():
     finally:
         db.close()
 
+
+# ======================
+# LOGICA DE CAJA
+# ======================
+def iniciar_caja(db: Session):
+    global caja_abierta, turno_actual
+
+    if caja_abierta:
+        return turno_actual
+
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+
+    cajas_hoy = db.query(CajaDB).filter(
+        CajaDB.fecha.like(f"{fecha_hoy}%")
+    ).count()
+
+    turno_actual = "mañana" if cajas_hoy == 0 else "tarde"
+
+    caja_abierta = True
+
+    return turno_actual
+
+
 # ======================
 # PRODUCTOS
 # ======================
 @app.post("/productos/", response_model=ProductoResponse)
 def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):
-    
     nuevo = ProductoDB(**producto.dict())
-
     db.add(nuevo)
     db.commit()
     db.refresh(nuevo)
-
     return nuevo
 
 
@@ -122,7 +196,6 @@ def obtener_productos(db: Session = Depends(get_db)):
 
 @app.delete("/productos/{producto_id}")
 def eliminar_producto(producto_id: int, db: Session = Depends(get_db)):
-    
     producto = db.query(ProductoDB).filter(ProductoDB.id == producto_id).first()
 
     if not producto:
@@ -130,12 +203,11 @@ def eliminar_producto(producto_id: int, db: Session = Depends(get_db)):
 
     db.delete(producto)
     db.commit()
-
     return {"mensaje": "Producto eliminado"}
+
 
 @app.put("/productos/{producto_id}", response_model=ProductoResponse)
 def actualizar_producto(producto_id: int, data: ProductoUpdate, db: Session = Depends(get_db)):
-    
     producto = db.query(ProductoDB).filter(ProductoDB.id == producto_id).first()
 
     if not producto:
@@ -154,51 +226,20 @@ def actualizar_producto(producto_id: int, data: ProductoUpdate, db: Session = De
 # ======================
 # VENTAS
 # ======================
-@app.post("/ventas/")
-def registrar_venta(
-    codigo: int,
-    cantidad: int,
-    turno: Literal["mañana", "tarde"],
-    db: Session = Depends(get_db)
-):
-    
-    producto = db.query(ProductoDB).filter(ProductoDB.codigo == codigo).first()
-
-    if not producto:
-        raise HTTPException(status_code=404, detail="Producto no existe")
-
-    if producto.cantidad < cantidad:
-        raise HTTPException(status_code=400, detail="Stock insuficiente")
-
-    total = producto.precio * cantidad
-
-    producto.cantidad -= cantidad
-
-    hora_actual = datetime.now().strftime("%H:%M:%S")
-
-    venta = VentaDB(
-        codigo=codigo,
-        cantidad=cantidad,
-        total=total,
-        fecha=hora_actual,
-        turno=turno
-    )
-
-    db.add(venta)
-    db.commit()
-
-    return {"mensaje": "Venta realizada", "total": total}
-
 @app.post("/ventas-multiples/")
 def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db)):
+    global caja_abierta, turno_actual
 
-    hora_actual = datetime.now().strftime("%H:%M:%S")
+    if not caja_abierta:
+        iniciar_caja(db)
+
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
     total_general = 0
 
     nueva_venta = VentaDB(
         total=0,
-        fecha=hora_actual,
-        turno=data.turno
+        fecha=fecha_hoy,
+        turno=turno_actual
     )
 
     db.add(nueva_venta)
@@ -206,7 +247,6 @@ def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db))
     db.refresh(nueva_venta)
 
     for item in data.items:
-
         producto = db.query(ProductoDB).filter(ProductoDB.codigo == item.codigo).first()
 
         if not producto:
@@ -220,14 +260,12 @@ def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db))
 
         producto.cantidad -= item.cantidad
 
-        venta_item = VentaItemDB(
+        db.add(VentaItemDB(
             venta_id=nueva_venta.id,
             codigo=item.codigo,
             cantidad=item.cantidad,
             subtotal=subtotal
-        )
-
-        db.add(venta_item)
+        ))
 
     nueva_venta.total = total_general
 
@@ -238,17 +276,15 @@ def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db))
 
 @app.get("/ventas/")
 def obtener_ventas(db: Session = Depends(get_db)):
-
     ventas = db.query(VentaDB).all()
     resultado = []
 
     for venta in ventas[-10:][::-1]:
-
         items = db.query(VentaItemDB).filter(VentaItemDB.venta_id == venta.id).all()
 
         resultado.append({
             "id": venta.id,
-            "hora": venta.fecha,
+            "fecha": venta.fecha,
             "turno": venta.turno,
             "total": venta.total,
             "items": [
@@ -263,39 +299,98 @@ def obtener_ventas(db: Session = Depends(get_db)):
 
     return resultado
 
+
 # ======================
 # CAJA
 # ======================
 @app.get("/caja/")
-def ver_caja(turno: Literal["mañana", "tarde"], db: Session = Depends(get_db)):
+def ver_caja(db: Session = Depends(get_db)):
+    global caja_abierta, turno_actual
 
-    hora_actual = datetime.now().strftime("%H:%M:%S")
+    if not caja_abierta:
+        return {"turno": None, "total": 0}
 
-    ventas = db.query(VentaDB).filter(VentaDB.fecha == hora_actual).all()
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
-    if turno == "mañana":
-        total = sum(v.total for v in ventas if v.turno == "mañana")
-    else:
-        total = sum(v.total for v in ventas)
+    ventas = db.query(VentaDB).filter(
+        VentaDB.fecha == fecha_hoy,
+        VentaDB.turno == turno_actual
+    ).all()
 
-    return {"turno": turno, "total": total}
-
-
-@app.post("/cierre-caja/")
-def cerrar_caja(db: Session = Depends(get_db)):
-
-    hora_actual = datetime.now().strftime("%H:%M:%S")
-
-    caja_existente = db.query(CajaDB).filter(CajaDB.fecha == hora_actual).first()
-    if caja_existente:
-        raise HTTPException(status_code=400, detail="La caja ya fue cerrada")
-
-    ventas = db.query(VentaDB).filter(VentaDB.fecha == hora_actual).all()
     total = sum(v.total for v in ventas)
 
-    nueva_caja = CajaDB(fecha=hora_actual, total=total)
+    return {
+        "turno": turno_actual,
+        "total": total
+    }
 
-    db.add(nueva_caja)
+
+@app.post("/cuadre-caja/")
+def cuadre_caja(db: Session = Depends(get_db)):
+    global caja_abierta, turno_actual
+
+    if not caja_abierta:
+        raise HTTPException(status_code=400, detail="No hay caja abierta")
+
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+
+    ventas = db.query(VentaDB).filter(
+        VentaDB.fecha == fecha_hoy,
+        VentaDB.turno == turno_actual
+    ).all()
+
+    total = sum(v.total for v in ventas)
+
+    db.add(CajaDB(
+        fecha=f"{fecha_hoy}-{turno_actual}",
+        total=total
+    ))
+
+    caja_abierta = False
+    turno_actual = None
+
     db.commit()
 
-    return {"mensaje": "Caja cerrada", "total": total}
+    return {"mensaje": "Cuadre realizado", "total": total}
+
+
+# ======================
+# LOGIN Y USUARIOS
+# ======================
+@app.post("/login/")
+def login(data: LoginData, db: Session = Depends(get_db)):
+    user = db.query(UsuarioDB).filter(
+        UsuarioDB.username == data.username,
+        UsuarioDB.password == data.password
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+    return {
+        "username": user.username,
+        "rol": user.rol
+    }
+
+
+@app.post("/usuarios/")
+def crear_usuario(data: UsuarioCreate, db: Session = Depends(get_db)):
+    if data.rol not in ["admin", "empleado"]:
+        raise HTTPException(status_code=400, detail="Rol inválido")
+
+    existe = db.query(UsuarioDB).filter(UsuarioDB.username == data.username).first()
+
+    if existe:
+        raise HTTPException(status_code=400, detail="Usuario ya existe")
+
+    nuevo = UsuarioDB(**data.dict())
+    db.add(nuevo)
+    db.commit()
+
+    return {"mensaje": "Usuario creado"}
+
+
+@app.get("/usuarios/count")
+def contar_usuarios(db: Session = Depends(get_db)):
+    total = db.query(UsuarioDB).count()
+    return {"total": total}
