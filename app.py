@@ -148,6 +148,13 @@ if menu == "Inicio":
         st.button("5\nTransferencias", use_container_width=True)
 
 
+@st.cache_data
+def get_productos():
+    response = requests.get(f"{API_URL}/productos/")
+    if response.status_code == 200:
+        return response.json()
+    return []
+
 if menu == "Productos":
 
     st.markdown("""
@@ -160,20 +167,16 @@ if menu == "Productos":
     # ======================
     # OBTENER PRODUCTOS
     # ======================
+    from collections import defaultdict
+
+    categorias = defaultdict(list)
+
     try:
-        response = requests.get(f"{API_URL}/productos/")
-        if response.status_code == 200:
-            productos = response.json()
+        productos = get_productos()
 
-            from collections import defaultdict
+        for p in productos:
+            categorias[p["categoria"]].append(p)
 
-            categorias = defaultdict(list)
-
-            for p in productos:
-                categorias[p["categoria"]].append(p)
-
-        else:
-            productos = []
     except Exception as e:
         st.error(f"Error API: {e}")
         productos = []
@@ -235,6 +238,7 @@ if menu == "Productos":
 
                     if res.status_code == 200:
                         st.success("Producto creado")
+                        st.cache_data.clear()
                         st.rerun()
                     else:
                         st.error(f"Error: {res.text}")
@@ -334,6 +338,7 @@ if menu == "Productos":
                                             if res.status_code == 200:
                                                 st.success("Producto actualizado")
                                                 st.session_state.editando = None
+                                                st.cache_data.clear()
                                                 st.rerun()
                                             else:
                                                 st.error(res.text)
@@ -353,6 +358,7 @@ if menu == "Productos":
                                                 if res.status_code == 200:
                                                     st.success("Producto eliminado")
                                                     st.session_state.confirm_delete = None
+                                                    st.cache_data.clear()
                                                     st.rerun()
                                                 else:
                                                     st.error(f"Error: {res.text}")
@@ -362,3 +368,97 @@ if menu == "Productos":
                                     with col_no:
                                         if st.button("Cancelar", key=f"no_{p['id']}"):
                                             st.session_state.confirm_delete = None
+                                
+if menu == "Ventas":
+
+    if "cuenta" not in st.session_state:
+        st.session_state.cuenta = []
+
+    st.markdown("""
+    <h2 style='margin-bottom:10px;'>
+    Registro de Ventas
+    </h2>
+    """, unsafe_allow_html=True)
+
+    productos = get_productos()
+
+    if not productos:
+        st.warning("No hay productos disponibles")
+    else:
+        # Mostrar productos
+        opciones = {
+            f"{p['nombre']} (Stock: {p['cantidad']})": p["codigo"]
+            for p in productos
+        }
+
+        producto_seleccionado = st.selectbox(
+            "Selecciona producto",
+            list(opciones.keys())
+        )
+
+        codigo = opciones[producto_seleccionado]
+
+        cantidad = st.number_input("Cantidad", min_value=1, step=1)
+
+        turno = st.selectbox("Turno", ["mañana", "tarde"])
+
+        producto_data = next(p for p in productos if p["codigo"] == codigo)
+
+        st.info(f"Disponible: {producto_data['cantidad']}")
+        st.info(f"Total: ${producto_data['precio'] * cantidad}")
+
+        stock_insuficiente = cantidad > producto_data["cantidad"]
+        if stock_insuficiente:
+            st.error("Stock insuficiente")
+
+        
+        if st.button("Agregar a la cuenta", disabled=stock_insuficiente):
+            st.subheader("Cuenta")
+
+        if not st.session_state.cuenta:
+            st.info("Cuenta vacía")
+        else:
+            total_general = 0
+
+            for item in st.session_state.cuenta:
+                subtotal = item["precio"] * item["cantidad"]
+                total_general += subtotal
+
+                st.write(f"{item['nombre']} x{item['cantidad']} → ${subtotal}")
+
+            st.markdown(f"### Total: ${total_general}")
+            st.session_state.cuenta.append({
+                "codigo": codigo,
+                "nombre": producto_data["nombre"],
+                "precio": producto_data["precio"],
+                "cantidad": cantidad
+            })
+            st.success("Producto agregado a la cuenta")
+            st.rerun()
+
+        if st.button("Finalizar venta"):
+
+                try:
+                    for item in st.session_state.carrito:
+                        res = requests.post(
+                            f"{API_URL}/ventas/",
+                            params={
+                                "codigo": item["codigo"],
+                                "cantidad": item["cantidad"],
+                                "turno": turno
+                            }
+                        )
+
+                        if res.status_code != 200:
+                            st.error(f"Error con {item['nombre']}")
+                            break
+
+                    else:
+                        st.success("Venta completa registrada 💸")
+
+                        st.session_state.carrito = []
+                        st.cache_data.clear()
+                        st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error: {e}")

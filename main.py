@@ -57,6 +57,10 @@ class ProductoCreate(BaseModel):
     cantidad: int
     categoria: str
 
+class ProductoUpdate(BaseModel):
+    nombre: str
+    precio: float
+    cantidad: int
 
 class ProductoResponse(ProductoCreate):
     id: int
@@ -113,24 +117,22 @@ def eliminar_producto(producto_id: int, db: Session = Depends(get_db)):
 
     return {"mensaje": "Producto eliminado"}
 
-@app.put("/productos/{producto_id}")
-def actualizar_producto(producto_id: int, data: ProductoCreate, db: Session = Depends(get_db)):
+@app.put("/productos/{producto_id}", response_model=ProductoResponse)
+def actualizar_producto(producto_id: int, data: ProductoUpdate, db: Session = Depends(get_db)):
     
     producto = db.query(ProductoDB).filter(ProductoDB.id == producto_id).first()
 
     if not producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-    producto.codigo = data.codigo
     producto.nombre = data.nombre
     producto.precio = data.precio
     producto.cantidad = data.cantidad
-    producto.categoria = data.categoria
 
     db.commit()
     db.refresh(producto)
 
-    return {"mensaje": "Producto actualizado"}
+    return producto
 
 
 # ======================
