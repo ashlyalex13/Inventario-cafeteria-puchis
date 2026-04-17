@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime
-from typing import List, Literal
+from typing import List
 from pydantic import BaseModel
 
 # ======================
@@ -14,7 +14,7 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
-# CONTROL DE CAJA (memoria)
+# CONTROL DE CAJA
 caja_abierta = False
 turno_actual = None
 
@@ -37,7 +37,7 @@ class VentaDB(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     total = Column(Float)
-    fecha = Column(String)  # YYYY-MM-DD
+    fecha = Column(String)
     turno = Column(String)
 
 
@@ -55,7 +55,7 @@ class CajaDB(Base):
     __tablename__ = "caja"
 
     id = Column(Integer, primary_key=True, index=True)
-    fecha = Column(String, unique=True)  # ejemplo: 2026-04-17-mañana
+    fecha = Column(String, unique=True)
     total = Column(Float)
 
 
@@ -63,16 +63,16 @@ class UsuarioDB(Base):
     __tablename__ = "usuarios"
 
     id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String)
     username = Column(String, unique=True)
     password = Column(String)
-    rol = Column(String)  # admin / empleado
+    rol = Column(String)
 
 
-# Crear tablas
 Base.metadata.create_all(bind=engine)
 
 # ======================
-# CREAR ADMIN AUTOMÁTICO
+# CREAR ADMIN
 # ======================
 def crear_admin():
     db = SessionLocal()
@@ -81,6 +81,7 @@ def crear_admin():
 
     if not existe:
         admin = UsuarioDB(
+            nombre="Ashly",
             username="admin",
             password="1234",
             rol="admin"
@@ -89,7 +90,6 @@ def crear_admin():
         db.commit()
 
     db.close()
-
 
 # ======================
 # SCHEMAS
@@ -130,10 +130,10 @@ class LoginData(BaseModel):
 
 
 class UsuarioCreate(BaseModel):
+    nombre: str
     username: str
-    password: str
-    rol: str
-
+    password: str | None = None
+    rol: str | None = None
 
 # ======================
 # APP
@@ -154,9 +154,8 @@ def get_db():
     finally:
         db.close()
 
-
 # ======================
-# LOGICA DE CAJA
+# CAJA
 # ======================
 def iniciar_caja(db: Session):
     global caja_abierta, turno_actual
@@ -171,11 +170,9 @@ def iniciar_caja(db: Session):
     ).count()
 
     turno_actual = "mañana" if cajas_hoy == 0 else "tarde"
-
     caja_abierta = True
 
     return turno_actual
-
 
 # ======================
 # PRODUCTOS
@@ -219,9 +216,7 @@ def actualizar_producto(producto_id: int, data: ProductoUpdate, db: Session = De
 
     db.commit()
     db.refresh(producto)
-
     return producto
-
 
 # ======================
 # VENTAS
@@ -268,7 +263,6 @@ def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db))
         ))
 
     nueva_venta.total = total_general
-
     db.commit()
 
     return {"mensaje": "Venta completa", "total": total_general}
@@ -299,7 +293,6 @@ def obtener_ventas(db: Session = Depends(get_db)):
 
     return resultado
 
-
 # ======================
 # CAJA
 # ======================
@@ -319,10 +312,7 @@ def ver_caja(db: Session = Depends(get_db)):
 
     total = sum(v.total for v in ventas)
 
-    return {
-        "turno": turno_actual,
-        "total": total
-    }
+    return {"turno": turno_actual, "total": total}
 
 
 @app.post("/cuadre-caja/")
@@ -353,9 +343,8 @@ def cuadre_caja(db: Session = Depends(get_db)):
 
     return {"mensaje": "Cuadre realizado", "total": total}
 
-
 # ======================
-# LOGIN Y USUARIOS
+# LOGIN
 # ======================
 @app.post("/login/")
 def login(data: LoginData, db: Session = Depends(get_db)):
@@ -367,27 +356,72 @@ def login(data: LoginData, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
-    return {
-        "username": user.username,
-        "rol": user.rol
-    }
+    return {"username": user.username, "rol": user.rol}
 
-
+# ======================
+# USUARIOS
+# ======================
 @app.post("/usuarios/")
 def crear_usuario(data: UsuarioCreate, db: Session = Depends(get_db)):
-    if data.rol not in ["admin", "empleado"]:
-        raise HTTPException(status_code=400, detail="Rol inválido")
 
     existe = db.query(UsuarioDB).filter(UsuarioDB.username == data.username).first()
 
     if existe:
         raise HTTPException(status_code=400, detail="Usuario ya existe")
 
-    nuevo = UsuarioDB(**data.dict())
+    if not data.password:
+        raise HTTPException(status_code=400, detail="La contraseña es obligatoria")
+
+    nuevo = UsuarioDB(
+        nombre=data.nombre,
+        username=data.username,
+        password=data.password,
+        rol="empleado"
+    )
+
     db.add(nuevo)
     db.commit()
 
     return {"mensaje": "Usuario creado"}
+
+
+@app.get("/usuarios/")
+def obtener_usuarios(db: Session = Depends(get_db)):
+    return db.query(UsuarioDB).all()
+
+
+@app.put("/usuarios/{usuario_id}")
+def actualizar_usuario(usuario_id: int, data: UsuarioCreate, db: Session = Depends(get_db)):
+    usuario = db.query(UsuarioDB).filter(UsuarioDB.id == usuario_id).first()
+
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    usuario.nombre = data.nombre
+    usuario.username = data.username
+
+    if data.password:
+        usuario.password = data.password
+
+    db.commit()
+
+    return {"mensaje": "Usuario actualizado"}
+
+
+@app.delete("/usuarios/{usuario_id}")
+def eliminar_usuario(usuario_id: int, db: Session = Depends(get_db)):
+    usuario = db.query(UsuarioDB).filter(UsuarioDB.id == usuario_id).first()
+
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if usuario.username == "admin":
+        raise HTTPException(status_code=400, detail="No puedes eliminar el admin")
+
+    db.delete(usuario)
+    db.commit()
+
+    return {"mensaje": "Usuario eliminado"}
 
 
 @app.get("/usuarios/count")

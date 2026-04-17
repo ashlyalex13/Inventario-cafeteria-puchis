@@ -26,6 +26,16 @@ def get_total_usuarios():
             return res.json()["total"]
     except:
         return 0
+    
+
+def get_usuarios():
+    try:
+        res = requests.get(f"{API_URL}/usuarios/")
+        if res.status_code == 200:
+            return res.json()
+        return []
+    except:
+        return []
 
 
 if "usuario" not in st.session_state:
@@ -46,7 +56,9 @@ if st.session_state.usuario is None:
             try:
                 res = requests.post(
                     f"{API_URL}/login/",
-                    json={"username": username, "password": password},
+                    json={
+                        "username": username, 
+                        "password": password},
                     timeout=5
                 )
 
@@ -706,5 +718,168 @@ if menu == "Cierre de caja":
             st.error(f"Error: {e}")
 
 if menu == "Usuarios":
-    st.title("Usuarios")
-    st.write("Aquí irá la gestión de usuarios")
+
+    st.markdown("""
+    <h2 style='margin-bottom:10px;'>
+    Gestión de Usuarios
+    </h2>
+    """, unsafe_allow_html=True)
+
+    usuarios = get_usuarios()
+    es_admin = st.session_state.usuario["rol"] == "admin"
+
+    # ======================
+    # CREAR USUARIO
+    # ======================
+    with st.expander("Crear usuario +"):
+
+        if not es_admin:
+            st.warning("Solo el administrador puede crear usuarios")
+        else:
+            with st.form("form_usuario"):
+
+                nombre = st.text_input("Nombre")
+                username = st.text_input("Username")
+                password = st.text_input("Contraseña", type="password")
+
+                guardar = st.form_submit_button("Crear usuario")
+
+                if guardar:
+                    try:
+                        res = requests.post(
+                            f"{API_URL}/usuarios/",
+                            json={
+                                "nombre": nombre,
+                                "username": username,
+                                "password": password
+                            }
+                        )
+
+                        if res.status_code == 200:
+                            st.success("Usuario creado")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(res.text)
+
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+    st.divider()
+
+    # ======================
+    # LISTA DE USUARIOS
+    # ======================
+    if not usuarios:
+        st.info("No hay usuarios registrados")
+    else:
+
+        st.markdown("""
+        <div style="
+            display: grid;
+            grid-template-columns: 2fr 1fr 60px;
+            font-weight: bold;
+            padding: 10px;
+            border-bottom: 2px solid #ddd;
+        ">
+            <div>Nombre</div>
+            <div>Rol</div>
+            <div></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if "editando_user" not in st.session_state:
+            st.session_state.editando_user = None
+
+        if "confirm_delete_user" not in st.session_state:
+            st.session_state.confirm_delete_user = None
+
+        for u in usuarios:
+
+            col1, col2 = st.columns([10, 1])
+
+            with col1:
+                st.markdown(f"""
+                <div class="fila-producto">
+                    <div>{u['nombre']}</div>
+                    <div>{u['rol']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col2:
+                with st.popover("⚙"):
+
+                    if es_admin:
+                        if st.button("Editar", key=f"edit_user_{u['id']}"):
+                            st.session_state.editando_user = u
+
+                        if st.button("Eliminar", key=f"del_user_{u['id']}"):
+                            st.session_state.confirm_delete_user = u["id"]
+                    else:
+                        st.info("Sin permisos")
+
+            # ======================
+            # EDITAR
+            # ======================
+            if (
+                st.session_state.editando_user and
+                st.session_state.editando_user["id"] == u["id"]
+            ):
+                with st.form(f"form_edit_user_{u['id']}"):
+
+                    nombre = st.text_input("Nombre", value=u["nombre"])
+                    username = st.text_input("Username", value=u["username"])
+                    password = st.text_input("Nueva contraseña", type="password")
+
+                    guardar = st.form_submit_button("Guardar cambios")
+
+                    if guardar:
+                        try:
+                            res = requests.put(
+                                f"{API_URL}/usuarios/{u['id']}",
+                                json={
+                                    "nombre": nombre,
+                                    "username": username,
+                                    "password": password,
+                                    "rol": u["rol"]  # se mantiene igual
+                                }
+                            )
+
+                            if res.status_code == 200:
+                                st.success("Usuario actualizado")
+                                st.session_state.editando_user = None
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error(res.text)
+
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+
+            # ======================
+            # ELIMINAR
+            # ======================
+            if st.session_state.confirm_delete_user == u["id"]:
+                st.warning("¿Seguro que quieres eliminar este usuario?")
+
+                col_yes, col_no = st.columns(2)
+
+                with col_yes:
+                    if st.button("Sí, eliminar", key=f"yes_user_{u['id']}"):
+                        try:
+                            res = requests.delete(f"{API_URL}/usuarios/{u['id']}")
+
+                            if res.status_code == 200:
+                                st.success("Usuario eliminado")
+                                st.session_state.confirm_delete_user = None
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error(res.text)
+
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+
+                with col_no:
+                    if st.button("Cancelar", key=f"no_user_{u['id']}"):
+                        st.session_state.confirm_delete_user = None
