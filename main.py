@@ -100,6 +100,20 @@ def obtener_productos(db: Session = Depends(get_db)):
     return db.query(ProductoDB).all()
 
 
+@app.delete("/productos/{producto_id}")
+def eliminar_producto(producto_id: int, db: Session = Depends(get_db)):
+    
+    producto = db.query(ProductoDB).filter(ProductoDB.id == producto_id).first()
+
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    db.delete(producto)
+    db.commit()
+
+    return {"mensaje": "Producto eliminado"}
+
+
 # ======================
 # VENTAS
 # ======================

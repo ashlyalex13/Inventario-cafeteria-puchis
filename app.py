@@ -288,21 +288,41 @@ if menu == "Productos":
                         </div>
                         """, unsafe_allow_html=True)
 
+                    # INICIALIZAR estado
+                    if "confirm_delete" not in st.session_state:
+                        st.session_state.confirm_delete = None
+
+
                     with col2:
                         with st.popover("⚙"):
+                            
                             if st.button("Editar", key=f"edit_{p['id']}"):
                                 st.warning("Editar próximamente")
 
+                            # BOTÓN ELIMINAR (primer paso)
                             if st.button("Eliminar", key=f"del_{p['id']}"):
+                                st.session_state.confirm_delete = p["id"]
+
+
+                    # CONFIRMACIÓN
+                    if st.session_state.confirm_delete == p["id"]:
+                        st.warning("¿Seguro que quieres eliminar este producto?")
+
+                        col_yes, col_no = st.columns(2)
+
+                        with col_yes:
+                            if st.button("Sí, eliminar", key=f"yes_{p['id']}"):
                                 try:
                                     res = requests.delete(f"{API_URL}/productos/{p['id']}")
                                     if res.status_code == 200:
-                                        st.success("Eliminado")
+                                        st.success("Producto eliminado")
+                                        st.session_state.confirm_delete = None
                                         st.rerun()
                                     else:
-                                        st.error("Error al eliminar")
-                                except:
-                                    st.error("Error conectando con la API")
+                                        st.error(f"Error: {res.text}")
+                                except Exception as e:
+                                    st.error(f"Error conectando con la API: {e}")
 
-                st.divider()
-                
+                        with col_no:
+                            if st.button("Cancelar", key=f"no_{p['id']}"):
+                                st.session_state.confirm_delete = None
