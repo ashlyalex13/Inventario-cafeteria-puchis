@@ -413,7 +413,14 @@ if menu == "Ventas":
 
         
         if st.button("Agregar a la cuenta", disabled=stock_insuficiente):
-            st.subheader("Cuenta")
+            st.session_state.cuenta.append({
+                "codigo": codigo,
+                "nombre": producto_data["nombre"],
+                "precio": producto_data["precio"],
+                "cantidad": cantidad
+            })
+            st.success("Producto agregado a la cuenta")
+            st.rerun()
 
         if not st.session_state.cuenta:
             st.info("Cuenta vacía")
@@ -427,19 +434,11 @@ if menu == "Ventas":
                 st.write(f"{item['nombre']} x{item['cantidad']} → ${subtotal}")
 
             st.markdown(f"### Total: ${total_general}")
-            st.session_state.cuenta.append({
-                "codigo": codigo,
-                "nombre": producto_data["nombre"],
-                "precio": producto_data["precio"],
-                "cantidad": cantidad
-            })
-            st.success("Producto agregado a la cuenta")
-            st.rerun()
 
         if st.button("Finalizar venta"):
 
                 try:
-                    for item in st.session_state.carrito:
+                    for item in st.session_state.cuenta:
                         res = requests.post(
                             f"{API_URL}/ventas/",
                             params={
@@ -454,9 +453,9 @@ if menu == "Ventas":
                             break
 
                     else:
-                        st.success("Venta completa registrada 💸")
+                        st.success("Venta completa registrada")
 
-                        st.session_state.carrito = []
+                        st.session_state.cuenta = []
                         st.cache_data.clear()
                         st.rerun()
 
