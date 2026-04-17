@@ -4,6 +4,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime
 from typing import List, Literal
 from pydantic import BaseModel
+from typing import List
 
 # ======================
 # BASE DE DATOS
@@ -67,6 +68,14 @@ class ProductoResponse(ProductoCreate):
 
     class Config:
         orm_mode = True
+
+class VentaItem(BaseModel):
+    codigo: int
+    cantidad: int
+
+class VentaMultiple(BaseModel):
+    items: List[VentaItem]
+    turno: Literal["mañana", "tarde"]
 
 
 # ======================
@@ -172,6 +181,41 @@ def registrar_venta(
     db.commit()
 
     return {"mensaje": "Venta realizada", "total": total}
+
+@app.post("/ventas-multiples/")
+def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db)):
+
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    total_general = 0
+
+    for item in data.items:
+
+        producto = db.query(ProductoDB).filter(ProductoDB.codigo == item.codigo).first()
+
+        if not producto:
+            raise HTTPException(status_code=404, detail=f"Producto {item.codigo} no existe")
+
+        if producto.cantidad < item.cantidad:
+            raise HTTPException(status_code=400, detail=f"Stock insuficiente para {producto.nombre}")
+
+        total = producto.precio * item.cantidad
+        total_general += total
+
+        producto.cantidad -= item.cantidad
+
+        venta = VentaDB(
+            codigo=item.codigo,
+            cantidad=item.cantidad,
+            total=total,
+            fecha=fecha_hoy,
+            turno=data.turno
+        )
+
+        db.add(venta)
+
+    db.commit()
+
+    return {"mensaje": "Venta completa", "total": total_general}
 
 
 @app.get("/ventas/")

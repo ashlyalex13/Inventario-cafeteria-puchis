@@ -133,6 +133,9 @@ section[data-testid="stSidebar"] div.stButton > button {
     background-color: #f9f9f9;
 }
 
+            
+
+                        
 </style>
 """, unsafe_allow_html=True)
 
@@ -391,73 +394,130 @@ if menu == "Ventas":
             for p in productos
         }
 
-        producto_seleccionado = st.selectbox(
-            "Selecciona producto",
-            list(opciones.keys())
-        )
+        col1, col2 = st.columns([2, 1])
 
-        codigo = opciones[producto_seleccionado]
+# ======================
+# IZQUIERDA (PRODUCTOS)
+# ======================
+        with col1:
+            producto_seleccionado = st.selectbox(
+                "Selecciona producto",
+                list(opciones.keys())
+            )
 
-        cantidad = st.number_input("Cantidad", min_value=1, step=1)
+            codigo = opciones[producto_seleccionado]
 
-        turno = st.selectbox("Turno", ["mañana", "tarde"])
+            cantidad = st.number_input("Cantidad", min_value=1, step=1)
 
-        producto_data = next(p for p in productos if p["codigo"] == codigo)
+            turno = st.selectbox("Turno", ["mañana", "tarde"])
 
-        st.info(f"Disponible: {producto_data['cantidad']}")
-        st.info(f"Total: ${producto_data['precio'] * cantidad}")
+            producto_data = next(p for p in productos if p["codigo"] == codigo)
 
-        stock_insuficiente = cantidad > producto_data["cantidad"]
-        if stock_insuficiente:
-            st.error("Stock insuficiente")
+            st.info(f"Disponible: {producto_data['cantidad']}")
+            st.info(f"Total: {producto_data['precio'] * cantidad}")
 
-        
-        if st.button("Agregar a la cuenta", disabled=stock_insuficiente):
-            st.session_state.cuenta.append({
-                "codigo": codigo,
-                "nombre": producto_data["nombre"],
-                "precio": producto_data["precio"],
-                "cantidad": cantidad
-            })
-            st.success("Producto agregado a la cuenta")
-            st.rerun()
+            stock_insuficiente = cantidad > producto_data["cantidad"]
+            if stock_insuficiente:
+                st.error("Stock insuficiente")
 
-        if not st.session_state.cuenta:
-            st.info("Cuenta vacía")
-        else:
-            total_general = 0
+            if st.button("Agregar a la cuenta +", disabled=stock_insuficiente):
+                st.session_state.cuenta.append({
+                    "codigo": codigo,
+                    "nombre": producto_data["nombre"],
+                    "precio": producto_data["precio"],
+                    "cantidad": cantidad
+                })
+                st.success("Producto agregado")
+                st.rerun()
 
-            for item in st.session_state.cuenta:
-                subtotal = item["precio"] * item["cantidad"]
-                total_general += subtotal
+        # ======================
+        # DERECHA (CUENTA)
+        # ======================
+        with col2:
+            st.subheader("Cuenta")
 
-                st.write(f"{item['nombre']} x{item['cantidad']} → ${subtotal}")
+            if not st.session_state.cuenta:
+                st.info("Cuenta vacía")
+            else:
+                total_general = 0
 
-            st.markdown(f"### Total: ${total_general}")
+                # ✅ CONTENEDOR CON SCROLL REAL
+                container = st.container(height=250)
 
-        if st.button("Finalizar venta"):
+                with container:
+                    for i, item in enumerate(st.session_state.cuenta):
+                        subtotal = item["precio"] * item["cantidad"]
+                        total_general += subtotal
 
-                try:
-                    for item in st.session_state.cuenta:
-                        res = requests.post(
-                            f"{API_URL}/ventas/",
-                            params={
-                                "codigo": item["codigo"],
-                                "cantidad": item["cantidad"],
-                                "turno": turno
-                            }
-                        )
+                        col_item, col_btn = st.columns([5, 1])
 
-                        if res.status_code != 200:
-                            st.error(f"Error con {item['nombre']}")
-                            break
+                        with col_item:
+                            st.markdown(f"""
+                            <div style="
+                                display:flex;
+                                justify-content:space-between;
+                                padding:6px;
+                                border-bottom:1px solid #eee;
+                                font-size:14px;
+                            ">
+                                <span>{item['nombre']} x{item['cantidad']}</span>
+                                <span>${subtotal}</span>
+                            </div>
+                            """, unsafe_allow_html=True)
 
+                        with col_btn:
+                            if st.button("🗑", key=f"del_{i}", help="Eliminar"):
+                                st.session_state.cuenta.pop(i)
+                                st.rerun()
+
+                # ✅ TOTAL (fuera del scroll)
+                st.markdown(f"""
+                <div style="
+                    background-color:#f1f3f5;
+                    padding:12px;
+                    border-radius:10px;
+                    margin-top:10px;
+                    font-weight:bold;
+                ">
+                💰 Total: ${total_general}
+                </div>
+                """, unsafe_allow_html=True)
+
+
+       # ======================
+# FINALIZAR VENTA
+# ======================
+                if st.button("Finalizar venta"):
+
+                    if not st.session_state.cuenta:
+                        st.warning("La cuenta está vacía")
                     else:
-                        st.success("Venta completa registrada")
+                        with st.spinner("Procesando venta..."):
 
-                        st.session_state.cuenta = []
-                        st.cache_data.clear()
-                        st.rerun()
+                            try:
+                                res = requests.post(
+                                    f"{API_URL}/ventas-multiples/",
+                                    json={
+                                        "items": [
+                                            {
+                                                "codigo": item["codigo"],
+                                                "cantidad": item["cantidad"]
+                                            }
+                                            for item in st.session_state.cuenta
+                                        ],
+                                        "turno": turno
+                                    }
+                                )
 
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    st.success(f"Venta registrada 💸 Total: ${data['total']}")
+
+                                    st.session_state.cuenta = []
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error(res.text)
+
+                            except Exception as e:
+                                st.error(f"Error: {e}")
