@@ -121,6 +121,18 @@ section[data-testid="stSidebar"] div.stButton > button {
     border: 1px solid #ccc !important;
 }
 
+.fila-producto {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr 1fr;
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    align-items: center;
+}
+
+.fila-producto:hover {
+    background-color: #f9f9f9;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -180,7 +192,7 @@ if menu == "Productos":
     # ======================
     # FORMULARIO
     # ======================
-    with st.expander("+ Añadir nuevo producto"):
+    with st.expander("Añadir nuevo producto +"):
         with st.form("form_producto"):
 
             categoria = st.selectbox(
@@ -204,7 +216,6 @@ if menu == "Productos":
             else:
                 nuevo_codigo = rango_min
 
-            # 👀 MOSTRAR CÓDIGO
             st.text_input("Código generado", value=nuevo_codigo, disabled=True)
 
             guardar = st.form_submit_button("Guardar")
@@ -244,40 +255,54 @@ if menu == "Productos":
     else:
         for categoria, items in categorias.items():
 
-            with st.expander(f"{categoria}", expanded=False):
+            with st.expander(f"{categoria}", expanded=True):
+
+                # ENCABEZADO TIPO TABLA
+                st.markdown("""
+                <div style="
+                    display: grid;
+                    grid-template-columns: 1fr 2fr 1fr 1fr 60px;
+                    font-weight: bold;
+                    padding: 10px;
+                    border-bottom: 2px solid #ddd;
+                ">
+                    <div>Código</div>
+                    <div>Nombre</div>
+                    <div>Precio</div>
+                    <div>Stock</div>
+                    <div></div>
+                </div>
+                """, unsafe_allow_html=True)
 
                 for p in items:
-                    col1, col2, col3 = st.columns([4, 1, 1])
+
+                    col1, col2 = st.columns([10,1])
 
                     with col1:
                         st.markdown(f"""
-                            <div style="
-                                padding:10px;
-                                border:1px solid #ddd;
-                                border-radius:10px;
-                                background-color:#fafafa;
-                            ">
-                            <b>{p['nombre']}</b><br>
-                            Código: {p['codigo']}<br>
-                            Precio: ${p['precio']}<br>
-                            Stock: {p['cantidad']}
-                            </div>
+                        <div class="fila-producto">
+                            <div>{p['codigo']}</div>
+                            <div>{p['nombre']}</div>
+                            <div>${p['precio']}</div>
+                            <div>{p['cantidad']}</div>
+                        </div>
                         """, unsafe_allow_html=True)
 
                     with col2:
-                        if st.button("Editar", key=f"edit_{p['id']}"):
-                            st.warning("Editar aún no implementado")
+                        with st.popover("⚙"):
+                            if st.button("Editar", key=f"edit_{p['id']}"):
+                                st.warning("Editar próximamente")
 
-                    with col3:
-                        if st.button("Eliminar", key=f"del_{p['id']}"):
-                            try:
-                                res = requests.delete(f"{API_URL}/productos/{p['id']}")
-                                if res.status_code == 200:
-                                    st.success("Eliminado")
-                                    st.rerun()
-                                else:
-                                    st.error("Error al eliminar")
-                            except:
-                                st.error("Error conectando con la API")
+                            if st.button("Eliminar", key=f"del_{p['id']}"):
+                                try:
+                                    res = requests.delete(f"{API_URL}/productos/{p['id']}")
+                                    if res.status_code == 200:
+                                        st.success("Eliminado")
+                                        st.rerun()
+                                    else:
+                                        st.error("Error al eliminar")
+                                except:
+                                    st.error("Error conectando con la API")
 
                 st.divider()
+                
