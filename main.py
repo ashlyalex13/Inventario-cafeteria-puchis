@@ -33,11 +33,18 @@ class VentaDB(Base):
     __tablename__ = "ventas"
 
     id = Column(Integer, primary_key=True, index=True)
-    codigo = Column(Integer)
-    cantidad = Column(Integer)
     total = Column(Float)
     fecha = Column(String)
     turno = Column(String)
+
+class VentaItemDB(Base):
+    __tablename__ = "venta_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    venta_id = Column(Integer)
+    codigo = Column(Integer)
+    cantidad = Column(Integer)
+    subtotal = Column(Float)
 
 
 class CajaDB(Base):
@@ -167,13 +174,13 @@ def registrar_venta(
 
     producto.cantidad -= cantidad
 
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    hora_actual = datetime.now().strftime("%H:%M:%S")
 
     venta = VentaDB(
         codigo=codigo,
         cantidad=cantidad,
         total=total,
-        fecha=fecha_hoy,
+        fecha=hora_actual,
         turno=turno
     )
 
@@ -185,8 +192,18 @@ def registrar_venta(
 @app.post("/ventas-multiples/")
 def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db)):
 
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    hora_actual = datetime.now().strftime("%H:%M:%S")
     total_general = 0
+
+    nueva_venta = VentaDB(
+        total=0,
+        fecha=hora_actual,
+        turno=data.turno
+    )
+
+    db.add(nueva_venta)
+    db.commit()
+    db.refresh(nueva_venta)
 
     for item in data.items:
 
@@ -198,20 +215,21 @@ def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db))
         if producto.cantidad < item.cantidad:
             raise HTTPException(status_code=400, detail=f"Stock insuficiente para {producto.nombre}")
 
-        total = producto.precio * item.cantidad
-        total_general += total
+        subtotal = producto.precio * item.cantidad
+        total_general += subtotal
 
         producto.cantidad -= item.cantidad
 
-        venta = VentaDB(
+        venta_item = VentaItemDB(
+            venta_id=nueva_venta.id,
             codigo=item.codigo,
             cantidad=item.cantidad,
-            total=total,
-            fecha=fecha_hoy,
-            turno=data.turno
+            subtotal=subtotal
         )
 
-        db.add(venta)
+        db.add(venta_item)
+
+    nueva_venta.total = total_general
 
     db.commit()
 
@@ -220,8 +238,30 @@ def registrar_venta_multiple(data: VentaMultiple, db: Session = Depends(get_db))
 
 @app.get("/ventas/")
 def obtener_ventas(db: Session = Depends(get_db)):
-    return db.query(VentaDB).all()
 
+    ventas = db.query(VentaDB).all()
+    resultado = []
+
+    for venta in ventas[-10:][::-1]:
+
+        items = db.query(VentaItemDB).filter(VentaItemDB.venta_id == venta.id).all()
+
+        resultado.append({
+            "id": venta.id,
+            "hora": venta.fecha,
+            "turno": venta.turno,
+            "total": venta.total,
+            "items": [
+                {
+                    "codigo": i.codigo,
+                    "cantidad": i.cantidad,
+                    "subtotal": i.subtotal
+                }
+                for i in items
+            ]
+        })
+
+    return resultado
 
 # ======================
 # CAJA
@@ -229,9 +269,9 @@ def obtener_ventas(db: Session = Depends(get_db)):
 @app.get("/caja/")
 def ver_caja(turno: Literal["mañana", "tarde"], db: Session = Depends(get_db)):
 
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    hora_actual = datetime.now().strftime("%H:%M:%S")
 
-    ventas = db.query(VentaDB).filter(VentaDB.fecha == fecha_hoy).all()
+    ventas = db.query(VentaDB).filter(VentaDB.fecha == hora_actual).all()
 
     if turno == "mañana":
         total = sum(v.total for v in ventas if v.turno == "mañana")
@@ -244,16 +284,16 @@ def ver_caja(turno: Literal["mañana", "tarde"], db: Session = Depends(get_db)):
 @app.post("/cierre-caja/")
 def cerrar_caja(db: Session = Depends(get_db)):
 
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    hora_actual = datetime.now().strftime("%H:%M:%S")
 
-    caja_existente = db.query(CajaDB).filter(CajaDB.fecha == fecha_hoy).first()
+    caja_existente = db.query(CajaDB).filter(CajaDB.fecha == hora_actual).first()
     if caja_existente:
         raise HTTPException(status_code=400, detail="La caja ya fue cerrada")
 
-    ventas = db.query(VentaDB).filter(VentaDB.fecha == fecha_hoy).all()
+    ventas = db.query(VentaDB).filter(VentaDB.fecha == hora_actual).all()
     total = sum(v.total for v in ventas)
 
-    nueva_caja = CajaDB(fecha=fecha_hoy, total=total)
+    nueva_caja = CajaDB(fecha=hora_actual, total=total)
 
     db.add(nueva_caja)
     db.commit()

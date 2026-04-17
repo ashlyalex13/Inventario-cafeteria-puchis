@@ -158,6 +158,17 @@ def get_productos():
         return response.json()
     return []
 
+@st.cache_data
+def get_ultimas_ventas():
+    try:
+        response = requests.get(f"{API_URL}/ventas/")
+        if response.status_code == 200:
+            data = response.json()
+            return data[-10:]  # últimas 10
+        return []
+    except:
+        return []
+
 if menu == "Productos":
 
     st.markdown("""
@@ -441,7 +452,6 @@ if menu == "Ventas":
             else:
                 total_general = 0
 
-                # ✅ CONTENEDOR CON SCROLL REAL
                 container = st.container(height=250)
 
                 with container:
@@ -470,7 +480,6 @@ if menu == "Ventas":
                                 st.session_state.cuenta.pop(i)
                                 st.rerun()
 
-                # ✅ TOTAL (fuera del scroll)
                 st.markdown(f"""
                 <div style="
                     background-color:#f1f3f5;
@@ -482,6 +491,7 @@ if menu == "Ventas":
                 💰 Total: ${total_general}
                 </div>
                 """, unsafe_allow_html=True)
+                
 
 
        # ======================
@@ -521,3 +531,83 @@ if menu == "Ventas":
 
                             except Exception as e:
                                 st.error(f"Error: {e}")
+
+#---------------------------------------------------------------------
+    st.divider()
+    
+    st.subheader("Últimas 10 ventas")
+
+    ventas = get_ultimas_ventas()
+    productos = get_productos()
+
+    mapa_productos = {p["codigo"]: p["nombre"] for p in productos}
+
+    if not ventas:
+        st.info("No hay ventas registradas")
+    else:
+        ultimas = ventas[-10:][::-1]
+
+        with st.expander("Últimas ventas", expanded=False):
+
+            for venta in ultimas:
+
+                # CONTENEDOR DE CADA VENTA
+                st.markdown("""
+                <div style="
+                    border: 1px solid #ddd;
+                    border-radius: 10px;
+                    margin-bottom: 10px;
+                    padding: 10px;
+                ">
+                """, unsafe_allow_html=True)
+
+                # ENCABEZADO TIPO TABLA
+                st.markdown("""
+                <div style="
+                    display: grid;
+                    grid-template-columns: 1fr 2fr 1fr;
+                    font-weight: bold;
+                    border-bottom: 1px solid #ddd;
+                    padding-bottom: 5px;
+                    margin-bottom: 5px;
+                ">
+                    <div>Código</div>
+                    <div>Nombre</div>
+                    <div>Cantidad</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                total = 0
+
+                for item in venta["items"]:
+                    nombre = mapa_productos.get(item["codigo"], f"Código {item['codigo']}")
+                    subtotal = item["cantidad"] * item.get("precio", 0)
+                    total += subtotal
+
+                    st.markdown(f"""
+                    <div style="
+                        display: grid;
+                        grid-template-columns: 1fr 2fr 1fr;
+                        padding: 5px 0;
+                        border-bottom: 1px solid #eee;
+                    ">
+                        <div>{item['codigo']}</div>
+                        <div>{nombre}</div>
+                        <div>{item['cantidad']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # FECHA Y TOTAL
+                st.markdown(f"""
+                <div style="margin-top: 8px; font-size: 13px; color: gray;">
+                    {venta.get('hora', 'Sin hora')}
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown(f"""
+                <div style="font-weight: bold; margin-top: 5px;">
+                    Total: ${venta.get('total', 0)}
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown("</div>", unsafe_allow_html=True)
